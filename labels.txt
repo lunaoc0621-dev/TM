@@ -1,3 +1,2 @@
-0 Izquierda
-1 Arriba
-2 Derecha
+0 Luna con los brazos arriba 
+1 Luna sentada en el puesto 
