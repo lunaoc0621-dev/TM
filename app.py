@@ -1,50 +1,91 @@
-import streamlit as st
-import cv2
-import numpy as np
-#from PIL import Image
-from PIL import Image as Image, ImageOps as ImagOps
-from keras.models import load_model
-
+import os
 import platform
 
-# Muestra la versión de Python junto con detalles adicionales
+import numpy as np
+import streamlit as st
+from PIL import Image, ImageOps
+from keras.models import load_model
+
 st.write("Versión de Python:", platform.python_version())
 
-model = load_model('keras_model.h5')
-data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
+# ---------------------------------------------------------------
+# Modelo y etiquetas
+# ---------------------------------------------------------------
+# El modelo (keras_model.h5) tiene 2 salidas (softmax de 2 neuronas).
+# El .h5 no guarda los nombres de las clases; Teachable Machine los
+# entrega aparte en labels.txt. Si ese archivo existe se usa; si no,
+# se usan las etiquetas que ya tenías en tu código.
+DEFAULT_LABELS = ["Izquierda", "Arriba"]
 
+
+@st.cache_resource
+def cargar_modelo():
+    return load_model("keras_model.h5", compile=False)
+
+
+def cargar_etiquetas(n_clases):
+    if os.path.exists("labels.txt"):
+        with open("labels.txt", encoding="utf-8") as f:
+            etiquetas = []
+            for linea in f.read().splitlines():
+                if not linea.strip():
+                    continue
+                partes = linea.strip().split(" ", 1)
+                # Formato de Teachable Machine: "0 Nombre"
+                etiquetas.append(partes[1] if len(partes) == 2 and partes[0].isdigit() else linea.strip())
+        if len(etiquetas) == n_clases:
+            return etiquetas
+    if len(DEFAULT_LABELS) == n_clases:
+        return DEFAULT_LABELS
+    return [f"Clase {i}" for i in range(n_clases)]
+
+
+model = cargar_modelo()
+n_clases = model.output_shape[-1]
+labels = cargar_etiquetas(n_clases)
+
+# ---------------------------------------------------------------
+# Interfaz
+# ---------------------------------------------------------------
 st.title("Reconocimiento de Imágenes")
-#st.write("Versión de Python:", platform.python_version())
-image = Image.open('OIG5.jpg')
-st.image(image, width=350)
+
+if os.path.exists("OIG5.jpg"):
+    st.image(Image.open("OIG5.jpg"), width=350)
+
 with st.sidebar:
-    st.subheader("Usando un modelo entrenado en teachable Machine puedes Usarlo en esta app para identificar")
+    st.subheader(
+        "Usando un modelo entrenado en Teachable Machine puedes usarlo "
+        "en esta app para identificar"
+    )
+    st.write("Clases detectables:")
+    for i, nombre in enumerate(labels):
+        st.write(f"{i}. {nombre}")
+
 img_file_buffer = st.camera_input("Toma una Foto")
 
 if img_file_buffer is not None:
-    # To read image file buffer with OpenCV:
+    img = Image.open(img_file_buffer).convert("RGB")
+
+    # Mismo preprocesamiento que Teachable Machine: recorte central 224x224
+    img = ImageOps.fit(img, (224, 224), Image.Resampling.LANCZOS)
+    img_array = np.asarray(img)
+
+    # Normalizar a [-1, 1]
+    normalized_image_array = (img_array.astype(np.float32) / 127.5) - 1
+
     data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
-   #To read image file buffer as a PIL Image:
-    img = Image.open(img_file_buffer)
-
-    newsize = (224, 224)
-    img = img.resize(newsize)
-    # To convert PIL Image to numpy array:
-    img_array = np.array(img)
-
-    # Normalize the image
-    normalized_image_array = (img_array.astype(np.float32) / 127.0) - 1
-    # Load the image into the array
     data[0] = normalized_image_array
 
-    # run the inference
-    prediction = model.predict(data)
-    print(prediction)
-    if prediction[0][0]>0.5:
-      st.header('Izquierda, con Probabilidad: '+str( prediction[0][0]) )
-    if prediction[0][1]>0.5:
-      st.header('Arriba, con Probabilidad: '+str( prediction[0][1]))
-    #if prediction[0][2]>0.5:
-    # st.header('Derecha, con Probabilidad: '+str( prediction[0][2]))
+    # Inferencia
+    prediction = model.predict(data)[0]
 
+    # Clase ganadora
+    idx = int(np.argmax(prediction))
+    st.header(f"{labels[idx]}, con probabilidad: {prediction[idx]:.2%}")
+
+    # Probabilidad de todas las clases
+    st.subheader("Probabilidades por clase")
+    for nombre, prob in zip(labels, prediction):
+        st.write(f"{nombre}: {prob:.2%}")
+        st.progress(float(prob))
 
