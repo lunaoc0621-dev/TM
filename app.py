@@ -50,7 +50,7 @@ labels = cargar_etiquetas(n_clases)
 st.title("Reconocimiento de Imágenes")
 
 if os.path.exists("OIG5.jpg"):
-    st.image(Image.open("OIG5.jpg"), width=350)
+    st.image(Image.open("Luna.jpg"), width=350)
 
 with st.sidebar:
     st.subheader(
